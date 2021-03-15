@@ -334,6 +334,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
     }
 
     private final String databaseName;
+    private final String[] databaseNames;
     private final String instanceName;
     private final SnapshotMode snapshotMode;
     private final SnapshotIsolationMode snapshotIsolationMode;
@@ -346,6 +347,7 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
         super(SqlServerConnector.class, config, config.getString(SERVER_NAME), new SystemTablesPredicate(), x -> x.schema() + "." + x.table(), true);
 
         this.databaseName = config.getString(DATABASE_NAME);
+        this.databaseNames = config.getString(DATABASE_NAMES) != null ? config.getString(DATABASE_NAMES).split(",") : new String[]{};
         this.instanceName = config.getString(INSTANCE);
         this.snapshotMode = SnapshotMode.parse(config.getString(SNAPSHOT_MODE), SNAPSHOT_MODE.defaultValueAsString());
 
@@ -400,6 +402,10 @@ public class SqlServerConnectorConfig extends HistorizedRelationalDatabaseConnec
 
     public String getDatabaseName() {
         return databaseName;
+    }
+
+    public String[] getDatabaseNames() {
+        return databaseNames;
     }
 
     public String getInstanceName() {

@@ -20,4 +20,9 @@ public class SqlServerTopicSelector {
         return TopicSelector.defaultSelector(connectorConfig,
                 (tableId, prefix, delimiter) -> String.join(delimiter, prefix, tableId.schema(), tableId.table()));
     }
+
+    public static TopicSelector<TableId> perDatabaseSelector(SqlServerConnectorConfig connectorConfig) {
+        return TopicSelector.defaultSelector(connectorConfig,
+                (tableId, prefix, delimiter) -> String.join(delimiter, prefix, tableId.catalog(), tableId.table()));
+    }
 }

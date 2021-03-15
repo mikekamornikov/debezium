@@ -82,51 +82,43 @@ public class ChangeEventSourceCoordinator<P extends TaskPartition, O extends Off
 
     public synchronized <T extends CdcSourceTaskContext> void start(T taskContext, ChangeEventQueueMetrics changeEventQueueMetrics,
                                                                     EventMetadataProvider metadataProvider) {
-        O tempOffset = null;
-        P tempPartition = null;
-
-        // TODO: iterate over all entries instead of breaking
-        for (Map.Entry<P, O> entry : previousOffsetContext.getOffsets().entrySet()) {
-            tempPartition = entry.getKey();
-            tempOffset = entry.getValue();
-            break;
-        }
-
         this.snapshotMetrics = changeEventSourceMetricsFactory.getSnapshotMetrics(taskContext, changeEventQueueMetrics, metadataProvider);
         this.streamingMetrics = changeEventSourceMetricsFactory.getStreamingMetrics(taskContext, changeEventQueueMetrics, metadataProvider);
         running = true;
 
-        P partition = tempPartition;
-        O previousOffset = tempOffset;
-
         // run the snapshot source on a separate thread so start() won't block
         executor.submit(() -> {
             try {
-                snapshotMetrics.register(LOGGER);
-                streamingMetrics.register(LOGGER);
-                LOGGER.info("Metrics registered");
+                for (Map.Entry<P, O> entry : previousOffsetContext.getOffsets().entrySet()) {
+                    P partition = entry.getKey();
+                    O previousOffset = entry.getValue();
 
-                ChangeEventSourceContext context = new ChangeEventSourceContextImpl();
-                LOGGER.info("Context created");
+                    snapshotMetrics.register(LOGGER);
+                    streamingMetrics.register(LOGGER);
+                    LOGGER.info("Metrics registered");
 
-                SnapshotChangeEventSource<P, O> snapshotSource = changeEventSourceFactory.getSnapshotChangeEventSource(snapshotMetrics);
-                CatchUpStreamingResult catchUpStreamingResult = executeCatchUpStreaming(context, previousOffset, snapshotSource);
-                if (catchUpStreamingResult.performedCatchUpStreaming) {
-                    streamingConnected(false);
-                    commitOffsetLock.lock();
-                    streamingSource = null;
-                    commitOffsetLock.unlock();
-                }
-                eventDispatcher.setEventListener(snapshotMetrics);
-                SnapshotResult<O> snapshotResult = snapshotSource.execute(context, partition, previousOffset);
-                LOGGER.info("Snapshot ended with {}", snapshotResult);
+                    ChangeEventSourceContext context = new ChangeEventSourceContextImpl();
+                    LOGGER.info("Context created");
 
-                if (snapshotResult.getStatus() == SnapshotResultStatus.COMPLETED || schema.tableInformationComplete()) {
-                    schema.assureNonEmptySchema();
-                }
+                    SnapshotChangeEventSource<P, O> snapshotSource = changeEventSourceFactory.getSnapshotChangeEventSource(snapshotMetrics);
+                    CatchUpStreamingResult catchUpStreamingResult = executeCatchUpStreaming(context, previousOffset, snapshotSource);
+                    if (catchUpStreamingResult.performedCatchUpStreaming) {
+                        streamingConnected(false);
+                        commitOffsetLock.lock();
+                        streamingSource = null;
+                        commitOffsetLock.unlock();
+                    }
+                    eventDispatcher.setEventListener(snapshotMetrics);
+                    SnapshotResult<O> snapshotResult = snapshotSource.execute(context, partition, previousOffset);
+                    LOGGER.info("Snapshot ended with {}", snapshotResult);
 
-                if (running && snapshotResult.isCompletedOrSkipped()) {
-                    streamEvents(context, partition, snapshotResult.getOffset());
+                    if (snapshotResult.getStatus() == SnapshotResultStatus.COMPLETED || schema.tableInformationComplete()) {
+                        schema.assureNonEmptySchema();
+                    }
+
+                    if (running && snapshotResult.isCompletedOrSkipped()) {
+                        streamEvents(context, partition, snapshotResult.getOffset());
+                    }
                 }
             }
             catch (InterruptedException e) {

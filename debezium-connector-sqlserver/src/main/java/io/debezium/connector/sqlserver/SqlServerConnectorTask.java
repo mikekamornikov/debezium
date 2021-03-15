@@ -6,6 +6,7 @@
 package io.debezium.connector.sqlserver;
 
 import java.sql.SQLException;
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -59,7 +60,6 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerTaskPartitio
     public ChangeEventSourceCoordinator<SqlServerTaskPartition, SqlServerOffsetContext> start(Configuration config) {
         final Clock clock = Clock.system();
         final SqlServerConnectorConfig connectorConfig = new SqlServerConnectorConfig(config);
-        final TopicSelector<TableId> topicSelector = SqlServerTopicSelector.defaultSelector(connectorConfig);
         final SchemaNameAdjuster schemaNameAdjuster = SchemaNameAdjuster.create(LOGGER);
         final SqlServerValueConverters valueConverters = new SqlServerValueConverters(connectorConfig.getDecimalMode(),
                 connectorConfig.getTemporalPrecisionMode(), connectorConfig.binaryHandlingMode());
@@ -85,8 +85,14 @@ public class SqlServerConnectorTask extends BaseSourceTask<SqlServerTaskPartitio
         TaskOffsetContext.Loader<SqlServerTaskPartition, SqlServerOffsetContext, SqlServerOffsetContext.Loader> loader = new TaskOffsetContext.Loader<>(
                 context.offsetStorageReader(),
                 new SqlServerOffsetContext.Loader(connectorConfig));
-        TaskOffsetContext<SqlServerTaskPartition, SqlServerOffsetContext> taskOffsetContext = loader.load(
-                new SqlServerTaskPartition.Provider(connectorConfig, config, metadataConnection).getPartitions());
+        Collection<SqlServerTaskPartition> partitions = new SqlServerTaskPartition.Provider(connectorConfig, config, metadataConnection).getPartitions();
+        TaskOffsetContext<SqlServerTaskPartition, SqlServerOffsetContext> taskOffsetContext = loader.load(partitions);
+
+        // use <server>.<database>.<table> topics in multi tenant scenario instead of <server>.<schema>.<table>
+        // TODO: make it configurable or switch permanently to per database topics
+        final TopicSelector<TableId> topicSelector = partitions.size() > 1
+                ? SqlServerTopicSelector.perDatabaseSelector(connectorConfig)
+                : SqlServerTopicSelector.defaultSelector(connectorConfig);
 
         schema = new SqlServerDatabaseSchema(connectorConfig, valueConverters, topicSelector, schemaNameAdjuster);
         schema.initializeStorage();
